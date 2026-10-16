@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs typescript-language-server with a Node >= 20 (found via nvm if the default is older).
+need=20
+cur=$(node -v 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')
+if [ -z "$cur" ] || [ "$cur" -lt "$need" ]; then
+  for d in $(ls -d "$HOME"/.nvm/versions/node/v* 2>/dev/null | sort -V -r); do
+    v=$(basename "$d" | sed 's/^v\([0-9]*\).*/\1/')
+    if [ "$v" -ge "$need" ]; then PATH="$d/bin:$PATH"; break; fi
+  done
+fi
+export PATH
+tsls="$HOME/.local/share/tsls"
+[ -e "$tsls/bin/typescript-language-server" ] || tsls="$tsls/node_modules/.bin"
+[ -e "$tsls/typescript-language-server" ] && exec "$tsls/typescript-language-server" "$@"
+exec "$HOME/.local/share/tsls/bin/typescript-language-server" "$@"
