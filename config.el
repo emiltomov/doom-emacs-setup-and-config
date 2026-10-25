@@ -108,6 +108,8 @@
       desktop-save t
       desktop-load-locked-desktop t
       desktop-auto-save-timeout 60)
+(after! desktop
+  (add-to-list (quote desktop-minor-mode-table) (quote (centaur-tabs-local-mode nil))))
 (make-directory desktop-dirname t)
 (desktop-save-mode 1)
 (add-hook 'kill-emacs-hook #'desktop-save-in-desktop-dir)
@@ -152,64 +154,7 @@
   (add-hook 'agent-shell-mode-hook
             (lambda () (when (bound-and-true-p persp-mode) (persp-add-buffer (current-buffer))))))
 
-(defun my/magit-frame ()
-  (seq-find (lambda (f) (and (frame-parameter f 'my-magit)
-                             (frame-live-p f)))
-            (frame-list)))
-
-(defun my/magit-display-buffer (buffer)
-  "Show Magit buffers in one floating child frame, reusing its window."
-  (let ((frame (my/magit-frame))
-        (display-buffer-alist nil))
-    (cond
-     ((and frame (eq (window-frame (selected-window)) frame))
-      (let ((cur (current-buffer)))
-        (unless (eq cur buffer)
-          (set-frame-parameter frame 'my-magit-history
-                               (cons cur (frame-parameter frame 'my-magit-history)))))
-      (display-buffer buffer '(display-buffer-same-window)))
-     (t
-      (let* ((parent (selected-frame))
-             (w (floor (* 0.8 (frame-width parent))))
-             (h (floor (* 0.8 (frame-height parent))))
-             (win (display-buffer
-                   buffer
-                   `((display-buffer-in-child-frame)
-                     (child-frame-parameters
-                      . ((my-magit . t)
-                         (name . "Magit")
-                         (width . ,w) (height . ,h)
-                         (left . 0.5) (top . 0.5)
-                         (undecorated . t)
-                         (border-width . 2)
-                         (internal-border-width . 6)
-                         (no-other-frame . nil)
-                         (unsplittable . t)))))))
-        (when win (select-frame-set-input-focus (window-frame win)))
-        win)))))
-
-(defun my/magit-bury (&optional kill-buffer)
-  "Go back to the previous Magit buffer, or close the Magit frame."
-  (let* ((frame (selected-frame))
-         (cur (current-buffer)))
-    (if (not (frame-parameter frame 'my-magit))
-        (quit-window kill-buffer)
-      (let ((hist (seq-filter #'buffer-live-p
-                              (frame-parameter frame 'my-magit-history))))
-        (while (and hist (eq (car hist) cur)) (pop hist))
-        (set-frame-parameter frame 'my-magit-history (cdr hist))
-        (if hist
-            (progn (switch-to-buffer (car hist) nil t)
-                   (when kill-buffer (kill-buffer cur)))
-          (when kill-buffer (kill-buffer cur))
-          (delete-frame frame))))))
-
-(after! magit
-  (setq magit-display-buffer-function #'my/magit-display-buffer
-        magit-bury-buffer-function #'my/magit-bury)
-  (add-to-list 'display-buffer-alist
-               '("\\(COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|NOTES_EDITMSG\\|git-rebase-todo\\|\\*magit-process\\|\\*magit-log\\|\\*magit-revision\\|\\*magit-diff\\|\\*magit-stash\\|\\*magit-refs\\|\\*magit-cherry\\|\\*magit-reflog\\)"
-                 (lambda (buffer _alist) (my/magit-display-buffer buffer)))))
+(load! "magit-frame")
 
 (map! "<f8>" #'+treemacs/toggle)
 
@@ -264,3 +209,19 @@
         centaur-tabs-set-bar 'over)
   (my/style-tabs)
   (add-hook 'doom-load-theme-hook #'my/style-tabs 90))
+
+;; Name term buffers after their foreground process
+(defun my/term-rename-buffers ()
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (derived-mode-p 'term-mode)
+        (let* ((proc (get-buffer-process buf))
+               (pgid (and proc (process-running-child-p proc)))
+               (name (if (integerp pgid)
+                         (alist-get 'comm (process-attributes pgid))
+                       (and proc (file-name-nondirectory (car (process-command proc)))))))
+          (when (and name (not (string-empty-p name)))
+            (let ((new (format "*%s*" name)))
+              (unless (string= new (buffer-name))
+                (rename-buffer new t)))))))))
+(run-with-timer 1 1 #'my/term-rename-buffers)
