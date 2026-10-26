@@ -35,6 +35,7 @@
       (display-buffer buffer '(display-buffer-same-window)))
      (t
       (let* ((parent (selected-frame))
+             (origin (selected-window))
              (w (floor (* 0.8 (frame-width parent))))
              (h (floor (* 0.8 (frame-height parent))))
              (win (display-buffer
@@ -60,7 +61,9 @@
                          (drag-with-header-line . t)
                          (no-other-frame . nil)
                          (unsplittable . t)))))))
-        (when win (select-frame-set-input-focus (window-frame win)))
+        (when win
+          (set-frame-parameter (window-frame win) 'my-magit-origin origin)
+          (select-frame-set-input-focus (window-frame win)))
         win)))))
 
 (defun my/magit-bury (&optional kill-buffer)
@@ -93,6 +96,25 @@
         (string-match-p "COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|\\*magit" (buffer-name)))))
 
 (add-hook 'delete-frame-functions #'my/magit-save-geometry)
+
+(defun my/magit-restore-origin (frame)
+  "After a Magit frame closes, refocus the window it was opened from."
+  (when (frame-parameter frame 'my-magit)
+    (let ((origin (frame-parameter frame 'my-magit-origin))
+          (parent (frame-parent frame)))
+      (run-at-time
+       0.05 nil
+       (lambda ()
+         (let ((win (if (and (window-live-p origin)
+                             (not (window-minibuffer-p origin)))
+                        origin
+                      (and (frame-live-p parent) (frame-root-window parent)))))
+           (when (window-live-p win)
+             (select-frame-set-input-focus (window-frame win))
+             (select-window win)
+             (when (minibufferp (window-buffer win))
+               (switch-to-buffer (other-buffer (window-buffer win)))))))))))
+(add-hook 'delete-frame-functions #'my/magit-restore-origin)
 
 (defun my/magit-cleanup-frames ()
   "Close Magit child frames left behind showing a non-Magit buffer.

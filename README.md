@@ -19,3 +19,16 @@ Files: `init.el` (modules), `packages.el` (extra packages), `config.el` (all cus
 `bin/typescript-language-server` (Node >= 20 wrapper), `ts-grammars.el` (grammar builder).
 Also install Rust (rustup), Node (nvm) and a JDK 21+ yourself.
 Copilot CLI (`copilot`) must be on PATH for `SPC o c`.
+
+## Custom keybindings
+
+| Keys | Action | Where |
+|------|--------|-------|
+| `SPC o c` | Copilot CLI (agent-shell) | global |
+| `F8` | Toggle Treemacs | global |
+| `C-<next>` / `C-<tab>` | Next tab (centaur-tabs) | global |
+| `C-<prior>` / `C-S-<iso-lefttab>` | Previous tab | global |
+| `C-c h` | Show Rust docs in popup near cursor (eldoc-box) | rust-mode / rust-ts-mode |
+| `C-S-t t` or `C-S-t C-S-t` | Go to implementation (Eglot) | rust-mode / rust-ts-mode |
+
+Doom defaults used with Rust/Eglot: `gd` definition, `gD` references, `gI` implementation, `K` docs.

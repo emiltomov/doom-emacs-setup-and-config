@@ -225,3 +225,19 @@
               (unless (string= new (buffer-name))
                 (rename-buffer new t)))))))))
 (run-with-timer 1 1 #'my/term-rename-buffers)
+
+(use-package! rainbow-delimiters
+  :hook ((prog-mode text-mode) . rainbow-delimiters-mode))
+
+(use-package! eldoc-box
+  :commands eldoc-box-help-at-point
+  :init
+  (map! :after rust-mode :map rust-mode-map "C-c h" #'eldoc-box-help-at-point)
+  (map! :after rust-ts-mode :map rust-ts-mode-map "C-c h" #'eldoc-box-help-at-point))
+
+(map! :after rust-mode :map rust-mode-map
+      "C-S-t t" #'eglot-find-implementation
+      "C-S-t C-S-t" #'eglot-find-implementation)
+(map! :after rust-ts-mode :map rust-ts-mode-map
+      "C-S-t t" #'eglot-find-implementation
+      "C-S-t C-S-t" #'eglot-find-implementation)
