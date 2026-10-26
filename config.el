@@ -84,7 +84,19 @@
 (use-package! dashboard
   :demand t
   :config
-  (setq dashboard-items '((recents . 10) (projects . 8) (bookmarks . 5))
+  (defun my/dashboard-insert-keys (_list-size)
+    "Insert custom key bindings section."
+    (dashboard-insert-heading "Custom keys:")
+    (insert "\n")
+    (dolist (k '(("SPC o c" . "Copilot CLI")
+                 ("F8" . "Toggle Treemacs")
+                 ("C-<next> / C-<prior>" . "Next / previous tab")
+                 ("C-c h" . "Rust docs popup")
+                 ("C-S-t t" . "Go to implementation (Rust)")
+                 ("gd / gD / gI / K" . "Definition / refs / impl / docs")))
+      (insert (format "    %-22s %s\n" (car k) (cdr k)))))
+  (add-to-list 'dashboard-item-generators '(keys . my/dashboard-insert-keys))
+  (setq dashboard-items '((recents . 10) (projects . 8) (bookmarks . 5) (keys . 1))
         dashboard-projects-backend 'projectile
         dashboard-center-content t
         dashboard-set-heading-icons t
