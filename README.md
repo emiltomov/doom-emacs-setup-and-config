@@ -15,13 +15,14 @@ existing Emacs/Doom configuration before installing.
 sudo apt install build-essential git autoconf texinfo libgtk-3-dev libgnutls28-dev \
   libtree-sitter-dev libjansson-dev libgccjit-dev libmagickwand-dev libxpm-dev \
   libjpeg-dev libgif-dev libtiff-dev librsvg2-dev libsqlite3-dev unzip curl \
-  fontconfig fonts-noto-core
+  fontconfig fonts-noto-core kitty pandoc cmake libvterm-dev libtool-bin \
+  libxml2-dev
 ```
 
 Before running bootstrap, install and activate **Node 20+ with npm**, **Rust via
 rustup**, and a **JDK 21+**. Their commands must be available in the terminal
 running bootstrap. Install and sign in to Copilot CLI separately if you use
-`SPC o c`; `copilot` must be on PATH.
+`C-c o c`; `copilot` must be on PATH.
 
 ```bash
 # Clone the branch containing the configuration described here.
@@ -78,9 +79,15 @@ to `config.el`, `magit-frame.el`, or the local theme.
 
 ## Custom keybindings
 
+Evil is disabled in this configuration: the Doom leader is `C-c` and the local
+leader is `C-c l`, rather than `SPC` and `SPC m`.
+
 | Keys | Action | Where |
 |------|--------|-------|
-| `SPC o c` | Copilot CLI (agent-shell) | global |
+| `C-c o c` | Copilot CLI (agent-shell) | global |
+| `C-c o k` | Open Kitty at the project root | global |
+| `C-c o t` | Toggle terminal inside Emacs (vterm) | global |
+| `C-c l p` | Render Markdown in an Emacs preview pane | Markdown |
 | `F8` | Toggle Treemacs | global |
 | `C-<next>` / `C-<tab>` | Next tab (centaur-tabs) | global |
 | `C-<prior>` / `C-S-<iso-lefttab>` | Previous tab | global |
@@ -91,8 +98,35 @@ to `config.el`, `magit-frame.el`, or the local theme.
 
 Doom defaults used with Rust/Eglot: `gd` definition, `gD` references, `gI` implementation, `K` docs.
 
+## Terminals and Markdown preview
+
+`C-c o k` (`M-x my/open-kitty`) launches Kitty in a separate native window at the
+current project root, falling back to the buffer's directory outside a project.
+Use `C-u C-c o k` to use the current directory instead. Kitty is a standalone
+application, not an Emacs-buffer terminal; remote/TRAMP directories are rejected.
+For a terminal inside Emacs, use `C-c o t` (`M-x +vterm/toggle`).
+
+In a Markdown buffer, `C-c l p` (`M-x my/markdown-preview`) renders the current
+contents, including unsaved edits, in a read-only pane on the right. Pandoc and
+Emacs' built-in HTML renderer do the work locally; no GitHub API or preview server
+is used, and no HTML files are written into the project. Press `g` in the preview
+to refresh or `q` to close it. Relative links and images resolve from the source
+directory.
+
+On an existing installation, install the new dependencies and sync once:
+
+```bash
+sudo apt install kitty pandoc cmake libvterm-dev libtool-bin libxml2-dev
+~/.config/emacs/bin/doom sync
+```
+
+Restart Emacs afterward to enable vterm. Its native module builds on first use
+and needs CMake, Make, and a C compiler. Markdown preview requires an Emacs build
+with libxml2 support; installing `libxml2-dev` only helps when building Emacs.
+
 ## Terminal editor keys
 
 In `ansi-term`, press `C-x C-x` (hold Ctrl and press X twice) to send a literal
 `Ctrl+X` to nano, then answer nano's save prompt. If the buffer is in line mode,
 first run `M-x term-char-mode` so input is forwarded to the terminal application.
+In vterm, use `C-q C-x` to forward nano's `Ctrl+X` instead.

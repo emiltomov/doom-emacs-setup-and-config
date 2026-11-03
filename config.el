@@ -95,7 +95,10 @@
     "Insert custom key bindings section."
     (dashboard-insert-heading "Custom keys:")
     (insert "\n")
-    (dolist (k '(("SPC o c" . "Copilot CLI")
+    (dolist (k '(("C-c o c" . "Copilot CLI")
+                 ("C-c o k" . "Kitty at project root")
+                 ("C-c o t" . "Toggle terminal inside Emacs (vterm)")
+                 ("C-c l p" . "Markdown preview")
                  ("F8" . "Toggle Treemacs")
                  ("C-<next> / C-<prior>" . "Next / previous tab")
                  ("RET in Magit" . "Changed-file diff in separate window")
@@ -117,6 +120,66 @@
   :commands (agent-shell agent-shell-github-start-copilot)
   :init
   (map! :leader :desc "Copilot CLI (agent-shell)" "o c" #'agent-shell-github-start-copilot))
+
+(defun my/open-kitty (&optional here)
+  "Open Kitty at the project root, or the current directory with prefix HERE."
+  (interactive "P")
+  (when (file-remote-p default-directory)
+    (user-error "Open Kitty from a local directory, not a remote buffer"))
+  (let ((kitty (executable-find "kitty"))
+        (directory (if here default-directory
+                     (or (doom-project-root) default-directory))))
+    (unless kitty
+      (user-error "Kitty is not installed or is not on PATH"))
+    (start-process "kitty" nil kitty "--detach" "--directory" directory)))
+
+(map! :leader :desc "Kitty terminal" "o k" #'my/open-kitty)
+
+(defun my/markdown-preview ()
+  "Render the current Markdown buffer in an Emacs pane without exporting files."
+  (interactive)
+  (unless (derived-mode-p 'markdown-mode)
+    (user-error "Open a Markdown buffer first"))
+  (unless (executable-find "pandoc")
+    (user-error "Install pandoc to preview Markdown"))
+  (require 'shr)
+  (require 'browse-url)
+  (unless (libxml-available-p)
+    (user-error "Markdown preview needs Emacs built with libxml2 support"))
+  (let* ((source (current-buffer))
+         (directory default-directory)
+         (document
+          (with-temp-buffer
+            (let ((output (current-buffer)))
+              (with-current-buffer source
+                (let ((mark-active nil)
+                      (markdown-command '("pandoc" "--from=gfm" "--to=html5")))
+                  (markdown output))))
+            (libxml-parse-html-region (point-min) (point-max))))
+         (preview (get-buffer-create
+                   (format "*Markdown preview: %s*" (buffer-name))))
+         (window (display-buffer preview)))
+    (with-selected-window window
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (shr-insert-document
+         `(html nil
+                (head nil (base ((href . ,(browse-url-file-url directory)))))
+                ,@(dom-children document)))
+        (goto-char (point-min))
+        (special-mode)
+        (setq-local default-directory directory
+                    revert-buffer-function
+                    (lambda (&rest _)
+                      (with-current-buffer source
+                        (my/markdown-preview))))))))
+
+(after! markdown-mode
+  (map! :map markdown-mode-map
+        :localleader :desc "Preview in Emacs" "p" #'my/markdown-preview))
+
+(set-popup-rule! "^\\*Markdown preview:"
+  :side 'right :size 0.5 :select nil :quit t :ttl nil :modeline t)
 
 (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
