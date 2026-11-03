@@ -20,6 +20,22 @@ Files: `init.el` (modules), `packages.el` (extra packages), `config.el` (all cus
 Also install Rust (rustup), Node (nvm) and a JDK 21+ yourself.
 Copilot CLI (`copilot`) must be on PATH for `SPC o c`.
 
+## Appearance and Git layout
+
+The local `themes/doom-jetbrains-theme.el` supplies charcoal editor/sidebar
+backgrounds, restrained syntax colors, flat tabs, and green/red diff highlights.
+Code uses JetBrains Mono 14; interface text uses Noto Sans 13.
+
+`M-x magit-status` opens a changes sidebar on the left. `RET` on a tracked change
+opens its syntax-highlighted diff in a separate, reusable native window; untracked
+files open in the editor. Commit-message buffers appear below the changes list.
+`q` closes the diff window and returns to its originating window, or closes the
+status sidebar when used there. Standard Magit staging and commit commands remain
+available.
+
+Restart Emacs after applying these settings; no `doom sync` is needed for changes
+to `config.el`, `magit-frame.el`, or the local theme.
+
 ## Custom keybindings
 
 | Keys | Action | Where |
@@ -28,6 +44,8 @@ Copilot CLI (`copilot`) must be on PATH for `SPC o c`.
 | `F8` | Toggle Treemacs | global |
 | `C-<next>` / `C-<tab>` | Next tab (centaur-tabs) | global |
 | `C-<prior>` / `C-S-<iso-lefttab>` | Previous tab | global |
+| `RET` | Open changed-file diff in a separate native window | Magit status |
+| `q` | Close diff window / quit status sidebar | Magit |
 | `C-c h` | Show Rust docs in popup near cursor (eldoc-box) | rust-mode / rust-ts-mode |
 | `C-S-t t` or `C-S-t C-S-t` | Go to implementation (Eglot) | rust-mode / rust-ts-mode |
 

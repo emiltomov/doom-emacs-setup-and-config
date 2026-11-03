@@ -22,7 +22,7 @@
 ;; accept. For example:
 ;;
 (setq doom-font (font-spec :family "JetBrains Mono" :size 14)
-      doom-variable-pitch-font (font-spec :family "JetBrains Mono" :size 14))
+      doom-variable-pitch-font (font-spec :family "Noto Sans" :size 13))
 ;;
 ;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
 ;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
@@ -32,7 +32,7 @@
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-(setq doom-theme (quote doom-nova))
+(setq doom-theme 'doom-jetbrains)
 ;; Specify both a dark and light theme, like so and Doom will choose which one
 ;; to load based on your system light/dark setting:
 ;;
@@ -44,6 +44,13 @@
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
+(setq-default cursor-type 'bar
+              line-spacing 0.1)
+
+(setq window-divider-default-right-width 1
+      window-divider-default-bottom-width 1
+      window-divider-default-places t)
+(window-divider-mode 1)
 
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
@@ -91,6 +98,7 @@
     (dolist (k '(("SPC o c" . "Copilot CLI")
                  ("F8" . "Toggle Treemacs")
                  ("C-<next> / C-<prior>" . "Next / previous tab")
+                 ("RET in Magit" . "Changed-file diff in separate window")
                  ("C-c h" . "Rust docs popup")
                  ("C-S-t t" . "Go to implementation (Rust)")
                  ("gd / gD / gI / K" . "Definition / refs / impl / docs")))
@@ -134,9 +142,11 @@
 (defvar my/layout-restored nil)
 
 (defun my/save-layout (&optional frame)
-  (when-let ((f (if (and frame (display-graphic-p frame))
-                    frame
-                  (seq-find #'display-graphic-p (frame-list)))))
+  (when-let ((f (seq-find (lambda (candidate)
+                            (and (display-graphic-p candidate)
+                                 (not (frame-parent candidate))
+                                 (not (frame-parameter candidate 'my-magit-diff))))
+                          (if frame (list frame) (frame-list)))))
     (with-temp-file my/layout-file
       (prin1 (window-state-get (frame-root-window f) t) (current-buffer)))))
 
@@ -172,7 +182,7 @@
 
 (after! centaur-tabs
   (setq centaur-tabs-style "bar"
-        centaur-tabs-set-bar 'under
+        centaur-tabs-set-bar nil
         centaur-tabs-set-icons t
         centaur-tabs-set-close-button t
         centaur-tabs-set-modified-marker t
@@ -185,42 +195,19 @@
         "C-<tab>" #'centaur-tabs-forward
         "C-S-<iso-lefttab>" #'centaur-tabs-backward))
 
-(defun my/style-tabs ()
-  (when (facep 'centaur-tabs-selected)
-    (let* ((bg (face-background 'default nil t))
-           (fg (face-foreground 'default nil t))
-           (accent (or (face-foreground 'font-lock-keyword-face nil t) fg))
-           (raised (doom-lighten bg 0.12))
-           (selected (doom-lighten bg 0.22))
-           (bar (doom-darken bg 0.25)))
-      (set-face-attribute 'tab-line nil :background bar :box nil)
-      (set-face-attribute 'centaur-tabs-default nil :background bar :foreground fg)
-      (set-face-attribute 'centaur-tabs-unselected nil
-                          :background raised :foreground (doom-darken fg 0.25)
-                          :box '(:line-width 3 :style released-button) :weight 'normal)
-      (set-face-attribute 'centaur-tabs-unselected-modified nil
-                          :background raised :foreground accent
-                          :box '(:line-width 3 :style released-button) :weight 'normal)
-      (set-face-attribute 'centaur-tabs-selected nil
-                          :background selected :foreground (doom-lighten fg 0.2)
-                          :box '(:line-width 3 :style pressed-button) :weight 'bold)
-      (set-face-attribute 'centaur-tabs-selected-modified nil
-                          :background selected :foreground accent
-                          :box '(:line-width 3 :style pressed-button) :weight 'bold)
-      (set-face-attribute 'centaur-tabs-active-bar-face nil :background accent)
-      (set-face-attribute 'centaur-tabs-close-selected nil :background selected)
-      (set-face-attribute 'centaur-tabs-close-unselected nil :background raised))))
+(defun my/enable-tabs ()
+  (centaur-tabs-mode 1))
+(remove-hook 'server-after-make-frame-hook #'centaur-tabs-mode)
+(add-hook 'server-after-make-frame-hook #'my/enable-tabs)
 
-;; Global menu bar and right-click context menu
-(menu-bar-mode 1)
-(add-to-list 'default-frame-alist '(menu-bar-lines . 1))
+(after! doom-modeline
+  (setq doom-modeline-height 24
+        doom-modeline-bar-width 2))
+
+(menu-bar-mode -1)
+(tool-bar-mode -1)
+(add-to-list 'default-frame-alist '(menu-bar-lines . 0))
 (context-menu-mode 1)
-
-(after! centaur-tabs
-  (setq centaur-tabs-style "box"
-        centaur-tabs-set-bar 'over)
-  (my/style-tabs)
-  (add-hook 'doom-load-theme-hook #'my/style-tabs 90))
 
 ;; Name term buffers after their foreground process
 (defun my/term-rename-buffers ()

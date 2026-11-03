@@ -1,146 +1,93 @@
 ;;; magit-frame.el -*- lexical-binding: t; -*-
 
-;; Remembered geometry: (LEFT TOP WIDTH-PX HEIGHT-PX), persisted across sessions
-(defvar my/magit-geometry-file (expand-file-name "magit-frame-geometry.eld" doom-cache-dir))
-(defvar my/magit-geometry
-  (ignore-errors
-    (with-temp-buffer
-      (insert-file-contents my/magit-geometry-file)
-      (read (current-buffer)))))
+(setq magit-diff-fontify-hunk 'all
+      magit-diff-specify-hunk-foreground nil
+      magit-diff-use-indicator-faces t)
 
-(defun my/magit-save-geometry (frame)
-  (when (and (frame-live-p frame) (frame-parameter frame 'my-magit))
-    (let ((geo (list (frame-parameter frame 'left) (frame-parameter frame 'top)
-                     (frame-text-width frame) (frame-text-height frame))))
-      (unless (equal geo my/magit-geometry)
-        (setq my/magit-geometry geo)
-        (ignore-errors
-          (with-temp-file my/magit-geometry-file (prin1 geo (current-buffer))))))))
-
-(defun my/magit-frame ()
-  (seq-find (lambda (f) (and (frame-parameter f 'my-magit)
-                             (frame-live-p f)))
+(defun my/magit-diff-frame ()
+  (seq-find (lambda (frame)
+              (and (frame-live-p frame)
+                   (frame-parameter frame 'my-magit-diff)))
             (frame-list)))
 
 (defun my/magit-display-buffer (buffer)
-  "Show Magit buffers in one floating child frame, reusing its window."
-  (let ((frame (my/magit-frame))
-        (display-buffer-alist nil))
+  "Dock status on the left and show diffs in a separate native frame."
+  (let ((display-buffer-alist nil))
     (cond
-     ((and frame (eq (window-frame (selected-window)) frame))
-      (let ((cur (current-buffer)))
-        (unless (eq cur buffer)
-          (set-frame-parameter frame 'my-magit-history
-                               (cons cur (frame-parameter frame 'my-magit-history)))))
-      (display-buffer buffer '(display-buffer-same-window)))
+     ((with-current-buffer buffer (derived-mode-p 'magit-status-mode))
+      (display-buffer
+       buffer '((display-buffer-in-side-window)
+                (side . left) (slot . 0) (window-width . 0.33)
+                (window-parameters . ((no-delete-other-windows . t))))))
+     ((and (display-graphic-p)
+           (with-current-buffer buffer (derived-mode-p 'magit-diff-mode)))
+      (let* ((origin (selected-window))
+             (frame (or (my/magit-diff-frame)
+                        (let ((new-frame
+                               (make-frame '((name . "Git Diff")
+                                             (title . "Git Diff")
+                                             (my-magit-diff . t)
+                                             (fullscreen . nil)
+                                             (menu-bar-lines . 0)
+                                             (tool-bar-lines . 0)))))
+                          (set-frame-size
+                           new-frame
+                           (round (* 0.9 (frame-pixel-width (window-frame origin))))
+                           (round (* 0.85 (frame-pixel-height (window-frame origin))))
+                           t)
+                          new-frame))))
+        (unless (eq frame (selected-frame))
+          (set-frame-parameter frame 'my-magit-origin origin))
+        (with-selected-frame frame
+          (display-buffer buffer '(display-buffer-same-window)))))
      (t
-      (let* ((parent (selected-frame))
-             (origin (selected-window))
-             (w (floor (* 0.8 (frame-width parent))))
-             (h (floor (* 0.8 (frame-height parent))))
-             (win (display-buffer
-                   buffer
-                   `((display-buffer-in-child-frame)
-                     (child-frame-parameters
-                      . ((my-magit . t)
-                         (name . "Magit")
-                         ,@(if (and (consp my/magit-geometry)
-                                    (= (length my/magit-geometry) 4)
-                                    (cl-every #'integerp my/magit-geometry))
-                               `((left . ,(nth 0 my/magit-geometry))
-                                 (top . ,(nth 1 my/magit-geometry))
-                                 (width . (text-pixels . ,(nth 2 my/magit-geometry)))
-                                 (height . (text-pixels . ,(nth 3 my/magit-geometry))))
-                             `((width . ,w) (height . ,h)
-                               (left . 0.5) (top . 0.5)))
-                         (undecorated . t)
-                         (border-width . 2)
-                         (internal-border-width . 8)
-                         (drag-internal-border . t)
-                         (drag-with-mode-line . t)
-                         (drag-with-header-line . t)
-                         (no-other-frame . nil)
-                         (unsplittable . t)))))))
-        (when win
-          (set-frame-parameter (window-frame win) 'my-magit-origin origin)
-          (select-frame-set-input-focus (window-frame win)))
-        win)))))
+      (display-buffer
+       buffer '((display-buffer-reuse-window
+                 display-buffer-pop-up-window
+                 display-buffer-use-some-window)
+                (inhibit-same-window . t)))))))
 
 (defun my/magit-bury (&optional kill-buffer)
-  "Go back to the previous Magit buffer, or close the Magit frame."
-  (let* ((frame (selected-frame))
-         (cur (current-buffer)))
-    (if (not (frame-parameter frame 'my-magit))
-        (quit-window kill-buffer)
-      (let ((hist (seq-filter #'buffer-live-p
-                              (frame-parameter frame 'my-magit-history))))
-        (while (and hist (eq (car hist) cur)) (pop hist))
-        (set-frame-parameter frame 'my-magit-history (cdr hist))
-        (if hist
-            (progn (switch-to-buffer (car hist) nil t)
-                   (when kill-buffer (kill-buffer cur)))
-          (when kill-buffer (kill-buffer cur))
-          (delete-frame frame))))))
+  "Close the diff frame, or quit the current Magit window."
+  (if (frame-parameter nil 'my-magit-diff)
+      (let ((frame (selected-frame))
+            (origin (frame-parameter nil 'my-magit-origin)))
+        (if kill-buffer (kill-buffer (current-buffer)) (bury-buffer))
+        (delete-frame frame)
+        (when (window-live-p origin)
+          (select-frame-set-input-focus (window-frame origin))
+          (select-window origin)))
+    (magit-mode-quit-window kill-buffer)))
+
+(defun my/magit-open-change ()
+  "Show the changed file at point in the diff frame."
+  (interactive)
+  (let ((file (magit-file-at-point)))
+    (cond
+     ((not file)
+      (call-interactively (or (command-remapping #'magit-visit-thing)
+                              #'magit-visit-thing)))
+     ((eq (magit-diff-type) 'untracked)
+      (magit-diff-visit-worktree-file t))
+     (t
+      (magit-diff-dwim (car (magit-diff-arguments)) (list file))))))
+
+(defun my/magit-status-setup ()
+  (setq-local truncate-lines t
+              tab-line-format nil
+              header-line-format "  Commit / Changes"
+              magit-section-initial-visibility-alist
+              (cons '(file . hide) magit-section-initial-visibility-alist))
+  (face-remap-add-relative 'default :background (doom-color 'bg-alt)))
 
 (after! magit
   (setq magit-display-buffer-function #'my/magit-display-buffer
-        magit-bury-buffer-function #'my/magit-bury)
-  (add-to-list 'display-buffer-alist
-               '("\\(COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|NOTES_EDITMSG\\|git-rebase-todo\\|\\*magit-process\\|\\*magit-log\\|\\*magit-revision\\|\\*magit-diff\\|\\*magit-stash\\|\\*magit-refs\\|\\*magit-cherry\\|\\*magit-reflog\\)"
-                 (lambda (buffer _alist) (my/magit-display-buffer buffer)))))
-
-(defun my/magit-frame-p-buffer (buf)
-  (with-current-buffer buf
-    (or (derived-mode-p 'magit-mode 'git-commit-mode 'git-rebase-mode)
-        (bound-and-true-p with-editor-mode)
-        (string-match-p "COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|\\*magit" (buffer-name)))))
-
-(add-hook 'delete-frame-functions #'my/magit-save-geometry)
-
-(defun my/magit-restore-origin (frame)
-  "After a Magit frame closes, refocus the window it was opened from."
-  (when (frame-parameter frame 'my-magit)
-    (let ((origin (frame-parameter frame 'my-magit-origin))
-          (parent (frame-parent frame)))
-      (run-at-time
-       0.05 nil
-       (lambda ()
-         (let ((win (if (and (window-live-p origin)
-                             (not (window-minibuffer-p origin)))
-                        origin
-                      (and (frame-live-p parent) (frame-root-window parent)))))
-           (when (window-live-p win)
-             (select-frame-set-input-focus (window-frame win))
-             (select-window win)
-             (when (minibufferp (window-buffer win))
-               (switch-to-buffer (other-buffer (window-buffer win)))))))))))
-(add-hook 'delete-frame-functions #'my/magit-restore-origin)
-
-(defun my/magit-cleanup-frames ()
-  "Close Magit child frames left behind showing a non-Magit buffer.
-A non-Magit buffer (e.g. a visited file) is moved to the parent frame."
-  (dolist (f (frame-list))
-    (when (and (frame-live-p f) (frame-parameter f 'my-magit))
-      (my/magit-save-geometry f)
-      (let ((buf (window-buffer (frame-selected-window f)))
-            (parent (frame-parent f)))
-        (unless (my/magit-frame-p-buffer buf)
-          (when (frame-live-p parent)
-            (with-selected-frame parent (switch-to-buffer buf)))
-          (delete-frame f)
-          (when (frame-live-p parent) (select-frame-set-input-focus parent)))))))
-
-(defvar my/magit-cleanup-timer nil)
-(when (timerp my/magit-cleanup-timer) (cancel-timer my/magit-cleanup-timer))
-(setq my/magit-cleanup-timer (run-with-idle-timer 0.5 t #'my/magit-cleanup-frames))
-(after! with-editor
-  (add-hook 'with-editor-post-finish-hook
-            (lambda () (run-at-time 0.2 nil #'my/magit-cleanup-frames))))
-
-;; Make an already-open Magit frame movable/resizable too
-(dolist (f (frame-list))
-  (when (frame-parameter f 'my-magit)
-    (modify-frame-parameters f '((internal-border-width . 8)
-                                 (drag-internal-border . t)
-                                 (drag-with-mode-line . t)
-                                 (drag-with-header-line . t)))))
+        magit-bury-buffer-function #'my/magit-bury
+        magit-diff-refine-hunk t)
+  (add-hook 'magit-status-mode-hook #'my/magit-status-setup)
+  (map! :map magit-status-mode-map "RET" #'my/magit-open-change)
+  (map! :map magit-mode-map "q" #'magit-mode-bury-buffer)
+  (set-popup-rule! "\\(?:COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|NOTES_EDITMSG\\)"
+    :actions '(display-buffer-in-side-window)
+    :side 'left :slot 1 :size 0.33
+    :select t :quit nil :ttl nil :modeline t))
