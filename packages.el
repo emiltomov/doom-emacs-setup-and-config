@@ -54,3 +54,6 @@
 (package! kusanagi-theme)
 (package! dashboard)
 (package! agent-shell)
+
+(package! rainbow-delimiters)
+(package! eldoc-box)

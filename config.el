@@ -22,7 +22,7 @@
 ;; accept. For example:
 ;;
 (setq doom-font (font-spec :family "JetBrains Mono" :size 14)
-      doom-variable-pitch-font (font-spec :family "JetBrains Mono" :size 14))
+      doom-variable-pitch-font (font-spec :family "Noto Sans" :size 13))
 ;;
 ;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
 ;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
@@ -32,7 +32,7 @@
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-(setq doom-theme (quote doom-nova))
+(setq doom-theme 'doom-jetbrains)
 ;; Specify both a dark and light theme, like so and Doom will choose which one
 ;; to load based on your system light/dark setting:
 ;;
@@ -44,6 +44,13 @@
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
+(setq-default cursor-type 'bar
+              line-spacing 0.1)
+
+(setq window-divider-default-right-width 1
+      window-divider-default-bottom-width 1
+      window-divider-default-places t)
+(window-divider-mode 1)
 
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
@@ -84,7 +91,20 @@
 (use-package! dashboard
   :demand t
   :config
-  (setq dashboard-items '((recents . 10) (projects . 8) (bookmarks . 5))
+  (defun my/dashboard-insert-keys (_list-size)
+    "Insert custom key bindings section."
+    (dashboard-insert-heading "Custom keys:")
+    (insert "\n")
+    (dolist (k '(("SPC o c" . "Copilot CLI")
+                 ("F8" . "Toggle Treemacs")
+                 ("C-<next> / C-<prior>" . "Next / previous tab")
+                 ("RET in Magit" . "Changed-file diff in separate window")
+                 ("C-c h" . "Rust docs popup")
+                 ("C-S-t t" . "Go to implementation (Rust)")
+                 ("gd / gD / gI / K" . "Definition / refs / impl / docs")))
+      (insert (format "    %-22s %s\n" (car k) (cdr k)))))
+  (add-to-list 'dashboard-item-generators '(keys . my/dashboard-insert-keys))
+  (setq dashboard-items '((recents . 10) (projects . 8) (bookmarks . 5) (keys . 1))
         dashboard-projects-backend 'projectile
         dashboard-center-content t
         dashboard-set-heading-icons t
@@ -108,6 +128,8 @@
       desktop-save t
       desktop-load-locked-desktop t
       desktop-auto-save-timeout 60)
+(after! desktop
+  (add-to-list (quote desktop-minor-mode-table) (quote (centaur-tabs-local-mode nil))))
 (make-directory desktop-dirname t)
 (desktop-save-mode 1)
 (add-hook 'kill-emacs-hook #'desktop-save-in-desktop-dir)
@@ -120,9 +142,11 @@
 (defvar my/layout-restored nil)
 
 (defun my/save-layout (&optional frame)
-  (when-let ((f (if (and frame (display-graphic-p frame))
-                    frame
-                  (seq-find #'display-graphic-p (frame-list)))))
+  (when-let ((f (seq-find (lambda (candidate)
+                            (and (display-graphic-p candidate)
+                                 (not (frame-parent candidate))
+                                 (not (frame-parameter candidate 'my-magit-diff))))
+                          (if frame (list frame) (frame-list)))))
     (with-temp-file my/layout-file
       (prin1 (window-state-get (frame-root-window f) t) (current-buffer)))))
 
@@ -152,70 +176,13 @@
   (add-hook 'agent-shell-mode-hook
             (lambda () (when (bound-and-true-p persp-mode) (persp-add-buffer (current-buffer))))))
 
-(defun my/magit-frame ()
-  (seq-find (lambda (f) (and (frame-parameter f 'my-magit)
-                             (frame-live-p f)))
-            (frame-list)))
-
-(defun my/magit-display-buffer (buffer)
-  "Show Magit buffers in one floating child frame, reusing its window."
-  (let ((frame (my/magit-frame))
-        (display-buffer-alist nil))
-    (cond
-     ((and frame (eq (window-frame (selected-window)) frame))
-      (let ((cur (current-buffer)))
-        (unless (eq cur buffer)
-          (set-frame-parameter frame 'my-magit-history
-                               (cons cur (frame-parameter frame 'my-magit-history)))))
-      (display-buffer buffer '(display-buffer-same-window)))
-     (t
-      (let* ((parent (selected-frame))
-             (w (floor (* 0.8 (frame-width parent))))
-             (h (floor (* 0.8 (frame-height parent))))
-             (win (display-buffer
-                   buffer
-                   `((display-buffer-in-child-frame)
-                     (child-frame-parameters
-                      . ((my-magit . t)
-                         (name . "Magit")
-                         (width . ,w) (height . ,h)
-                         (left . 0.5) (top . 0.5)
-                         (undecorated . t)
-                         (border-width . 2)
-                         (internal-border-width . 6)
-                         (no-other-frame . nil)
-                         (unsplittable . t)))))))
-        (when win (select-frame-set-input-focus (window-frame win)))
-        win)))))
-
-(defun my/magit-bury (&optional kill-buffer)
-  "Go back to the previous Magit buffer, or close the Magit frame."
-  (let* ((frame (selected-frame))
-         (cur (current-buffer)))
-    (if (not (frame-parameter frame 'my-magit))
-        (quit-window kill-buffer)
-      (let ((hist (seq-filter #'buffer-live-p
-                              (frame-parameter frame 'my-magit-history))))
-        (while (and hist (eq (car hist) cur)) (pop hist))
-        (set-frame-parameter frame 'my-magit-history (cdr hist))
-        (if hist
-            (progn (switch-to-buffer (car hist) nil t)
-                   (when kill-buffer (kill-buffer cur)))
-          (when kill-buffer (kill-buffer cur))
-          (delete-frame frame))))))
-
-(after! magit
-  (setq magit-display-buffer-function #'my/magit-display-buffer
-        magit-bury-buffer-function #'my/magit-bury)
-  (add-to-list 'display-buffer-alist
-               '("\\(COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|NOTES_EDITMSG\\|git-rebase-todo\\|\\*magit-process\\|\\*magit-log\\|\\*magit-revision\\|\\*magit-diff\\|\\*magit-stash\\|\\*magit-refs\\|\\*magit-cherry\\|\\*magit-reflog\\)"
-                 (lambda (buffer _alist) (my/magit-display-buffer buffer)))))
+(load! "magit-frame")
 
 (map! "<f8>" #'+treemacs/toggle)
 
 (after! centaur-tabs
   (setq centaur-tabs-style "bar"
-        centaur-tabs-set-bar 'under
+        centaur-tabs-set-bar nil
         centaur-tabs-set-icons t
         centaur-tabs-set-close-button t
         centaur-tabs-set-modified-marker t
@@ -228,39 +195,48 @@
         "C-<tab>" #'centaur-tabs-forward
         "C-S-<iso-lefttab>" #'centaur-tabs-backward))
 
-(defun my/style-tabs ()
-  (when (facep 'centaur-tabs-selected)
-    (let* ((bg (face-background 'default nil t))
-           (fg (face-foreground 'default nil t))
-           (accent (or (face-foreground 'font-lock-keyword-face nil t) fg))
-           (raised (doom-lighten bg 0.12))
-           (selected (doom-lighten bg 0.22))
-           (bar (doom-darken bg 0.25)))
-      (set-face-attribute 'tab-line nil :background bar :box nil)
-      (set-face-attribute 'centaur-tabs-default nil :background bar :foreground fg)
-      (set-face-attribute 'centaur-tabs-unselected nil
-                          :background raised :foreground (doom-darken fg 0.25)
-                          :box '(:line-width 3 :style released-button) :weight 'normal)
-      (set-face-attribute 'centaur-tabs-unselected-modified nil
-                          :background raised :foreground accent
-                          :box '(:line-width 3 :style released-button) :weight 'normal)
-      (set-face-attribute 'centaur-tabs-selected nil
-                          :background selected :foreground (doom-lighten fg 0.2)
-                          :box '(:line-width 3 :style pressed-button) :weight 'bold)
-      (set-face-attribute 'centaur-tabs-selected-modified nil
-                          :background selected :foreground accent
-                          :box '(:line-width 3 :style pressed-button) :weight 'bold)
-      (set-face-attribute 'centaur-tabs-active-bar-face nil :background accent)
-      (set-face-attribute 'centaur-tabs-close-selected nil :background selected)
-      (set-face-attribute 'centaur-tabs-close-unselected nil :background raised))))
+(defun my/enable-tabs ()
+  (centaur-tabs-mode 1))
+(remove-hook 'server-after-make-frame-hook #'centaur-tabs-mode)
+(add-hook 'server-after-make-frame-hook #'my/enable-tabs)
 
-;; Global menu bar and right-click context menu
-(menu-bar-mode 1)
-(add-to-list 'default-frame-alist '(menu-bar-lines . 1))
+(after! doom-modeline
+  (setq doom-modeline-height 24
+        doom-modeline-bar-width 2))
+
+(menu-bar-mode -1)
+(tool-bar-mode -1)
+(add-to-list 'default-frame-alist '(menu-bar-lines . 0))
 (context-menu-mode 1)
 
-(after! centaur-tabs
-  (setq centaur-tabs-style "box"
-        centaur-tabs-set-bar 'over)
-  (my/style-tabs)
-  (add-hook 'doom-load-theme-hook #'my/style-tabs 90))
+;; Name term buffers after their foreground process
+(defun my/term-rename-buffers ()
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (derived-mode-p 'term-mode)
+        (let* ((proc (get-buffer-process buf))
+               (pgid (and proc (process-running-child-p proc)))
+               (name (if (integerp pgid)
+                         (alist-get 'comm (process-attributes pgid))
+                       (and proc (file-name-nondirectory (car (process-command proc)))))))
+          (when (and name (not (string-empty-p name)))
+            (let ((new (format "*%s*" name)))
+              (unless (string= new (buffer-name))
+                (rename-buffer new t)))))))))
+(run-with-timer 1 1 #'my/term-rename-buffers)
+
+(use-package! rainbow-delimiters
+  :hook ((prog-mode text-mode) . rainbow-delimiters-mode))
+
+(use-package! eldoc-box
+  :commands eldoc-box-help-at-point
+  :init
+  (map! :after rust-mode :map rust-mode-map "C-c h" #'eldoc-box-help-at-point)
+  (map! :after rust-ts-mode :map rust-ts-mode-map "C-c h" #'eldoc-box-help-at-point))
+
+(map! :after rust-mode :map rust-mode-map
+      "C-S-t t" #'eglot-find-implementation
+      "C-S-t C-S-t" #'eglot-find-implementation)
+(map! :after rust-ts-mode :map rust-ts-mode-map
+      "C-S-t t" #'eglot-find-implementation
+      "C-S-t C-S-t" #'eglot-find-implementation)
