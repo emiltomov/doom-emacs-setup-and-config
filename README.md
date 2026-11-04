@@ -70,7 +70,17 @@ Code uses JetBrains Mono 14; interface text uses Noto Sans 13.
 
 `M-x magit-status` opens a changes sidebar on the left. `RET` on a tracked change
 opens its syntax-highlighted diff in a separate, reusable native window; untracked
-files open in the editor. Commit-message buffers appear below the changes list.
+files open in the editor. A dedicated commit-message pane appears below the
+changes list. Write your draft there, then click **Commit**, press `C-c C-c`,
+or use Magit's usual `c c`. Magit copies the draft into its normal commit
+editor; `C-c C-c` there finishes the commit, and `C-c C-k` cancels.
+
+Drafts are separate for each repository/worktree and stored in its Git metadata
+as `DOOM_COMMIT_DRAFT` (never staged). `C-x C-s` saves an unfinished draft for
+later sessions. Successful commits clear the draft; cancellation or failure
+keeps it. Existing amend, merge, rebase and template messages are not overwritten.
+`M-x my/magit-commit-message` opens the pane directly.
+
 `q` closes the diff window and returns to its originating window, or closes the
 status sidebar when used there. Standard Magit staging and commit commands remain
 available. Separate native diff windows require a graphical session; terminal
@@ -95,6 +105,7 @@ leader is `C-c l`, rather than `SPC` and `SPC m`.
 | `C-<next>` / `C-<tab>` | Next tab (centaur-tabs) | global |
 | `C-<prior>` / `C-S-<iso-lefttab>` | Previous tab | global |
 | `RET` | Open changed-file diff in a separate native window | Magit status |
+| `C-c C-c` | Review draft / finish the actual commit | Commit-message pane |
 | `q` | Close diff window / quit status sidebar | Magit |
 | `C-c h` | Show Rust docs in popup near cursor (eldoc-box) | rust-mode / rust-ts-mode |
 | `C-S-t t` or `C-S-t C-S-t` | Go to implementation (Eglot) | rust-mode / rust-ts-mode |

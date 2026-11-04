@@ -45,7 +45,10 @@ sidebar, and opening/reusing/closing native diff windows.
   Completion uses Corfu/Orderless and Vertico; language tooling uses Eglot with
   Java, JavaScript, and Rust modules configured for LSP and tree-sitter.
 - `config.el` loads `magit-frame.el` via `load!`. Status occupies a left side
-  window; commit messages appear beneath it. Tracked-file `RET` and other Magit
+  window; a per-worktree `DOOM_COMMIT_DRAFT` pane appears beneath it and seeds
+  empty new-commit editors. Keep native commit review, existing messages, and
+  draft recovery on cancellation/failure; clear drafts only after success.
+  Tracked-file `RET` and other Magit
   diff commands use a separate reusable native frame, with `q` restoring focus
   to the originating window. Terminal sessions use ordinary Emacs windows.
 - `themes/doom-jetbrains-theme.el` is a local Doom theme, selected by `doom-theme`

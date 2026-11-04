@@ -4,6 +4,91 @@
       magit-diff-specify-hunk-foreground nil
       magit-diff-use-indicator-faces t)
 
+(define-derived-mode my/magit-commit-draft-mode text-mode "Commit Draft"
+  "Edit a repository's draft before starting a Magit commit."
+  (setq-local fill-column 72
+              tab-line-format nil
+              display-line-numbers nil
+              header-line-format
+              (list "  Commit message  "
+                    (propertize
+                     "[Commit]" 'mouse-face 'mode-line-highlight
+                     'help-echo "Review this message in Magit (C-c C-c)"
+                     'local-map
+                     (let ((map (make-sparse-keymap)))
+                       (define-key map [header-line mouse-1]
+                                   #'my/magit-commit-from-draft)
+                       map))
+                    "  C-c C-c"))
+  (face-remap-add-relative 'default :background (doom-color 'bg-alt)))
+
+(defun my/magit-commit-draft-buffer ()
+  "Return the current repository's file-backed commit draft."
+  (let* ((root (or (magit-toplevel) (user-error "Not inside a Git repository")))
+         (file (expand-file-name "DOOM_COMMIT_DRAFT" (magit-gitdir))))
+    (unless (file-exists-p file)
+      (write-region "" nil file nil 'silent))
+    (let ((buffer (find-file-noselect file)))
+      (with-current-buffer buffer
+        (unless (derived-mode-p 'my/magit-commit-draft-mode)
+          (my/magit-commit-draft-mode))
+        (setq default-directory root)
+        (when (bound-and-true-p persp-mode)
+          (persp-add-buffer buffer)))
+      buffer)))
+
+(defun my/magit-commit-message ()
+  "Open the current repository's commit-message pane."
+  (interactive)
+  (pop-to-buffer (my/magit-commit-draft-buffer)))
+
+(defun my/magit-show-commit-message ()
+  "Keep a draft beneath the visible status without replacing an active editor."
+  (when (and (derived-mode-p 'magit-status-mode)
+             (get-buffer-window (current-buffer) (selected-frame))
+             (not (magit-commit-message-buffer)))
+    (display-buffer (my/magit-commit-draft-buffer))))
+
+(defun my/magit-commit-from-draft (&optional event)
+  "Review the draft using Magit's normal commit command."
+  (interactive (list (when (mouse-event-p last-input-event) last-input-event)))
+  (when event
+    (select-window (posn-window (event-start event))))
+  (call-interactively #'magit-commit-create))
+
+(defun my/magit-use-commit-draft ()
+  "Seed an empty new-commit editor without overwriting existing messages."
+  (when (and (memq last-command '(magit-commit-create magit-commit--all
+                                 magit-commit--allow-empty
+                                 my/magit-commit-from-draft))
+             (equal (file-name-nondirectory (or buffer-file-name ""))
+                    "COMMIT_EDITMSG")
+             (not (git-commit-buffer-message))
+             (not (magit-merge-in-progress-p))
+             (not (magit-rebase-in-progress-p)))
+    (when-let* ((draft (get-file-buffer
+                        (expand-file-name "DOOM_COMMIT_DRAFT" (magit-gitdir))))
+                (text (with-current-buffer draft
+                        (buffer-substring-no-properties (point-min) (point-max))))
+                (_ (not (string-blank-p text))))
+      (goto-char (point-min))
+      (insert text (if (string-suffix-p "\n" text) "\n" "\n\n"))
+      (goto-char (point-min))
+      ;; Native setup clears the modified flag after running its hooks.
+      (add-hook 'with-editor-pre-finish-hook
+                (lambda () (set-buffer-modified-p t)) nil t)
+      (add-hook
+       'git-commit-post-finish-hook
+       (lambda ()
+         (when (buffer-live-p draft)
+           (with-current-buffer draft
+             (when (equal text (buffer-substring-no-properties (point-min) (point-max)))
+               (erase-buffer)
+               (let ((inhibit-message t)
+                     (message-log-max nil))
+                 (save-buffer))))))
+       nil t))))
+
 (defun my/magit-diff-frame ()
   (seq-find (lambda (frame)
               (and (frame-live-p frame)
@@ -58,6 +143,11 @@
         (when (window-live-p origin)
           (select-frame-set-input-focus (window-frame origin))
           (select-window origin)))
+    (when (derived-mode-p 'magit-status-mode)
+      (when-let* ((draft (get-file-buffer
+                          (expand-file-name "DOOM_COMMIT_DRAFT" (magit-gitdir))))
+                  (window (get-buffer-window draft (selected-frame))))
+        (delete-window window)))
     (magit-mode-quit-window kill-buffer)))
 
 (defun my/magit-open-change ()
@@ -86,8 +176,16 @@
         magit-bury-buffer-function #'my/magit-bury
         magit-diff-refine-hunk t)
   (add-hook 'magit-status-mode-hook #'my/magit-status-setup)
+  (add-hook 'magit-post-display-buffer-hook #'my/magit-show-commit-message)
+  (add-hook 'magit-post-refresh-hook #'my/magit-show-commit-message)
+  (add-hook 'git-commit-setup-hook #'my/magit-use-commit-draft -80)
+  (map! :map my/magit-commit-draft-mode-map "C-c C-c" #'my/magit-commit-from-draft)
   (map! :map magit-status-mode-map "RET" #'my/magit-open-change)
   (map! :map magit-mode-map "q" #'magit-mode-bury-buffer)
+  (set-popup-rule! "DOOM_COMMIT_DRAFT"
+    :actions '(display-buffer-in-side-window)
+    :side 'left :slot 1 :size 0.33
+    :select nil :quit nil :ttl nil :modeline t)
   (set-popup-rule! "\\(?:COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|NOTES_EDITMSG\\)"
     :actions '(display-buffer-in-side-window)
     :side 'left :slot 1 :size 0.33

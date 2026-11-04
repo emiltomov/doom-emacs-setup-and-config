@@ -103,6 +103,7 @@
                  ("F8" . "Toggle Treemacs")
                  ("C-<next> / C-<prior>" . "Next / previous tab")
                  ("RET in Magit" . "Changed-file diff in separate window")
+                 ("C-c C-c in commit pane" . "Review draft / finish commit")
                  ("C-c h" . "Rust docs popup")
                  ("C-S-t t" . "Go to implementation (Rust)")
                  ("gd / gD / gI / K" . "Definition / refs / impl / docs")))
