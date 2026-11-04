@@ -27,6 +27,7 @@
                                (make-frame '((name . "Git Diff")
                                              (title . "Git Diff")
                                              (my-magit-diff . t)
+                                             (persp-ignore-wconf . t)
                                              (fullscreen . nil)
                                              (menu-bar-lines . 0)
                                              (tool-bar-lines . 0)))))

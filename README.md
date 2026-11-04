@@ -19,10 +19,12 @@ sudo apt install build-essential git autoconf texinfo libgtk-3-dev libgnutls28-d
   libxml2-dev
 ```
 
-Before running bootstrap, install and activate **Node 20+ with npm**, **Rust via
+Before running bootstrap, install and activate **Node 22.13+ with npm**, **Rust via
 rustup**, and a **JDK 21+**. Their commands must be available in the terminal
 running bootstrap. Install and sign in to Copilot CLI separately if you use
 `C-c o c`; `copilot` must be on PATH.
+For Mermaid diagrams, install Chrome or Chromium and put its launcher on PATH.
+Bootstrap installs Mermaid CLI without downloading another browser.
 
 ```bash
 # Clone the branch containing the configuration described here.
@@ -85,6 +87,7 @@ leader is `C-c l`, rather than `SPC` and `SPC m`.
 | Keys | Action | Where |
 |------|--------|-------|
 | `C-c o c` | Copilot CLI (agent-shell) | global |
+| `C-c o d` | Open dashboard | global |
 | `C-c o k` | Open Kitty at the project root | global |
 | `C-c o t` | Toggle terminal inside Emacs (vterm) | global |
 | `C-c l p` | Render Markdown in an Emacs preview pane | Markdown |
@@ -97,6 +100,32 @@ leader is `C-c l`, rather than `SPC` and `SPC m`.
 | `C-S-t t` or `C-S-t C-S-t` | Go to implementation (Eglot) | rust-mode / rust-ts-mode |
 
 Doom defaults used with Rust/Eglot: `gd` definition, `gD` references, `gI` implementation, `K` docs.
+
+## Dashboard and session restoration
+
+The menu bar and project-grouped tabs are enabled. `C-c o d`
+(`M-x my/open-dashboard`) opens the dashboard at any time. It is also available
+in the workspace buffer list and shown when there is no saved editor layout.
+A saved layout takes priority at startup so the dashboard does not replace an
+open file or remove a split.
+
+The last main editor layout, selected workspace, and local file buffers are
+saved after one second of idle time following a window change, and before
+closing the editor frame or quitting Emacs. On restart, buffers are loaded
+before the saved splits are restored; Treemacs, Magit status, Markdown previews,
+and vterm panes are recreated. Reopening a client after closing the last editor
+frame also restores the layout. Child popups and native Git diff windows are not
+restored and cannot overwrite the main layout.
+Split proportions adapt to the current frame size, and diagram images fit their
+restored panes. Explicitly opening a file with an `emacsclient +LINE:COLUMN`
+argument retains that requested position.
+
+This state stays local under Doom's cache directory (`layout.eld`,
+`workspaces.eld`, and `desktop/`); it is not part of a Git clone. A forced kill
+can recover only the last completed autosave. Terminal panes start new shells:
+running jobs and other process sessions cannot resume after Emacs exits. Remote
+buffers are not automatically reopened. Save file edits normally; layout
+snapshots do not store unsaved buffer text.
 
 ## Terminals and Markdown preview
 
@@ -112,6 +141,24 @@ Emacs' built-in HTML renderer do the work locally; no GitHub API or preview serv
 is used, and no HTML files are written into the project. Press `g` in the preview
 to refresh or `q` to close it. Relative links and images resolve from the source
 directory.
+
+Fenced `mermaid` blocks render locally as SVG diagrams, including flowcharts and
+sequence diagrams. Rendering uses Mermaid CLI with Chrome/Chromium and keeps the
+browser sandbox enabled; no diagram or Markdown service receives the document.
+Generated SVGs are cached under Doom's `markdown-diagrams/` cache directory.
+Invalid diagrams show their source plus an error; other Markdown still renders.
+Diagram images require graphical Emacs.
+
+On an existing installation, install Mermaid CLI once with an active Node 22.13+:
+
+```bash
+PUPPETEER_SKIP_DOWNLOAD=1 npm install --prefix "$HOME/.local/share/mermaid" \
+  @mermaid-js/mermaid-cli
+ln -sf "$HOME/.config/doom/bin/mmdc" "$HOME/.local/bin/mmdc"
+```
+
+The tracked `bin/mmdc` wrapper selects Node 22.13+ from nvm if Emacs inherits an
+older default. Install Chrome or Chromium separately if neither is available.
 
 On an existing installation, install the new dependencies and sync once:
 

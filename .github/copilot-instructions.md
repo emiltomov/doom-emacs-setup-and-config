@@ -9,8 +9,9 @@ at `~/.config/doom`. Doom itself lives separately at `~/.config/emacs`.
   `./bootstrap.sh`. This builds Emacs 31 into `~/.local`, installs Doom, fonts,
   CLI tools and language servers, runs Doom sync, and builds tree-sitter grammars.
   It changes the local environment; use the targeted commands below for edits.
-- Install Rust via rustup, Node via nvm, and JDK 21+ separately. The TypeScript
-  language server needs Node 20+, and `copilot` must be on PATH for agent-shell.
+- Install Rust via rustup, Node 22.13+ via nvm, and JDK 21+ separately. Mermaid
+  needs Node 22.13+, the TypeScript server needs Node 20+, and `copilot` must be
+  on PATH for agent-shell.
 - After changing `init.el` or `packages.el`, run
   `~/.config/emacs/bin/doom sync`, then restart Emacs. `config.el` edits do not
   require sync.
@@ -22,6 +23,7 @@ Run these syntax checks from the repository root:
 ```sh
 bash -n bootstrap.sh
 sh -n bin/typescript-language-server
+sh -n bin/mmdc
 emacs -Q --batch --eval '(dolist (file (append (directory-files default-directory t "\\.el$") (directory-files "themes" t "\\.el$"))) (with-temp-buffer (insert-file-contents file) (emacs-lisp-mode) (check-parens)))'
 ```
 
@@ -49,13 +51,22 @@ sidebar, and opening/reusing/closing native diff windows.
 - `themes/doom-jetbrains-theme.el` is a local Doom theme, selected by `doom-theme`
   in `config.el`. Keep palette and face definitions there rather than adding
   competing runtime face overrides; tabs and Magit share the same palette.
-- Session persistence has separate layers: desktop saves buffers, custom window
-  state saves the main graphical layout under `doom-cache-dir`. Diff and child
-  frames are excluded from layout saves. Layout restoration is guarded to run
-  once and supports frames created after daemon startup.
+- Session persistence combines eager desktop buffer restoration, Doom's
+  workspace backend, and the main window state under `doom-cache-dir`. Save
+  before frame/workspace teardown and restore after the first GUI frame settles.
+  Do not save an uninitialized startup layout over the last good snapshot.
+  Restore nested splits in consistent cell units and preserve explicit client
+  file positions; Emacs 31's pixelwise restoration mixes units during recursion.
+  Diff, daemon, and child frames must not overwrite the editor's window state.
+  Supported tool panes are recreated; running process sessions are not resumed.
 - The custom emacs-dashboard replaces Doom's dashboard module. Centaur tabs group
-  buffers by Projectile project. Agent-shell starts new Copilot sessions and adds
-  its buffers to the current Doom workspace when `persp-mode` is active.
+  buffers by Projectile project. Populate the dashboard without stealing windows
+  from a restored layout. Agent-shell starts new Copilot sessions and adds its
+  buffers to the current Doom workspace when `persp-mode` is active.
+- Markdown previews use local Pandoc/SHR rendering. Mermaid fences use the
+  tracked `bin/mmdc` wrapper and an installed Chrome/Chromium to produce cached
+  SVGs with HTML labels disabled for librsvg compatibility. Do not upload
+  Markdown to an external rendering service or disable the browser sandbox.
 - `bootstrap.sh` provisions external dependencies. Its TypeScript server symlink
   points to the repository's `bin/typescript-language-server` wrapper, which
   selects a suitable Node from nvm when necessary and supports both server

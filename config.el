@@ -96,6 +96,7 @@
     (dashboard-insert-heading "Custom keys:")
     (insert "\n")
     (dolist (k '(("C-c o c" . "Copilot CLI")
+                 ("C-c o d" . "Open dashboard")
                  ("C-c o k" . "Kitty at project root")
                  ("C-c o t" . "Toggle terminal inside Emacs (vterm)")
                  ("C-c l p" . "Markdown preview")
@@ -107,14 +108,35 @@
                  ("gd / gD / gI / K" . "Definition / refs / impl / docs")))
       (insert (format "    %-22s %s\n" (car k) (cdr k)))))
   (add-to-list 'dashboard-item-generators '(keys . my/dashboard-insert-keys))
+  (add-to-list 'doom-real-buffer-modes 'dashboard-mode)
+  (defun my/dashboard-buffer ()
+    "Return a populated dashboard without replacing an editor window."
+    (dashboard-insert-startupify-lists t)
+    (let ((buffer (get-buffer dashboard-buffer-name)))
+      (when (bound-and-true-p persp-mode)
+        (persp-add-buffer buffer))
+      buffer))
+  (defun my/open-dashboard ()
+    "Open the dashboard in the current window."
+    (interactive)
+    (switch-to-buffer (my/dashboard-buffer)))
+  (defun my/startup-buffer ()
+    "Show the dashboard unless this frame has restored its saved layout."
+    (let ((dashboard (my/dashboard-buffer)))
+      (if (frame-parameter nil 'my-layout-restored)
+          (window-buffer (selected-window))
+        dashboard)))
   (setq dashboard-items '((recents . 10) (projects . 8) (bookmarks . 5) (keys . 1))
         dashboard-projects-backend 'projectile
         dashboard-center-content t
         dashboard-set-heading-icons t
         dashboard-set-file-icons t
         dashboard-startup-banner 'logo
-        initial-buffer-choice (lambda () (get-buffer-create dashboard-buffer-name)))
-  (dashboard-setup-startup-hook))
+        initial-buffer-choice #'my/startup-buffer)
+  (dashboard-setup-startup-hook)
+  (remove-hook 'emacs-startup-hook #'dashboard-initialize)
+  (add-hook 'emacs-startup-hook #'my/dashboard-buffer)
+  (map! :leader :desc "Dashboard" "o d" #'my/open-dashboard))
 
 (use-package! agent-shell
   :commands (agent-shell agent-shell-github-start-copilot)
@@ -134,6 +156,88 @@
     (start-process "kitty" nil kitty "--detach" "--directory" directory)))
 
 (map! :leader :desc "Kitty terminal" "o k" #'my/open-kitty)
+
+(defvar-local my/markdown-preview-source-buffer nil)
+
+(defun my/markdown-mermaid-svg (code)
+  "Render Mermaid CODE locally and return its cached SVG filename."
+  (require 'json)
+  (let* ((renderer (executable-find "mmdc"))
+         (browser (or (executable-find "google-chrome")
+                      (executable-find "chromium")
+                      (executable-find "chromium-browser")))
+         (directory (expand-file-name "markdown-diagrams/" doom-cache-dir))
+         (options '((theme . "dark") (htmlLabels . :false)
+                    (flowchart . ((htmlLabels . :false)))
+                    (securityLevel . "strict")))
+         (config (json-serialize options))
+         (file (expand-file-name
+                (concat (secure-hash 'sha256 (concat config code)) ".svg")
+                directory)))
+    (unless renderer
+      (user-error "Install Mermaid CLI with bootstrap.sh"))
+    (unless browser
+      (user-error "Install Chrome or Chromium to render Mermaid diagrams"))
+    (unless (file-exists-p file)
+      (make-directory directory t)
+      (set-file-modes directory #o700)
+      (let ((input (make-temp-file (expand-file-name "input-" directory) nil ".mmd"))
+            (output (make-temp-file (expand-file-name "output-" directory) nil ".svg"))
+            (settings (make-temp-file (expand-file-name "config-" directory) nil ".json"))
+            (puppeteer (make-temp-file (expand-file-name "browser-" directory) nil ".json"))
+            (log (get-buffer-create "*Mermaid render*")))
+        (unwind-protect
+            (progn
+              (with-temp-file input (insert code))
+              (with-temp-file settings (insert config))
+              (with-temp-file puppeteer
+                (insert (json-serialize `((executablePath . ,browser)))))
+              (with-current-buffer log
+                (let ((inhibit-read-only t)) (erase-buffer)))
+              (unless (eq 0 (call-process renderer nil log nil
+                                         "-i" input "-o" output
+                                         "-c" settings "-p" puppeteer
+                                         "-b" "transparent"))
+                (error "Mermaid rendering failed; see *Mermaid render*"))
+              (set-file-modes output #o600)
+              (rename-file output file t))
+          (dolist (temporary (list input output settings puppeteer))
+            (when (file-exists-p temporary)
+              (delete-file temporary))))))
+    file))
+
+(defun my/markdown-render-pre (dom)
+  "Render Mermaid fences as images and leave other code blocks unchanged."
+  (if (and (display-graphic-p)
+           (member "mermaid" (split-string (or (dom-attr dom 'class) ""))))
+      (condition-case err
+          ;; Preserve syntax across Pandoc's highlighting spans.
+          (let ((file (my/markdown-mermaid-svg (dom-texts dom ""))))
+            (shr-ensure-newline)
+            (insert-image (create-image file 'svg nil
+                                        :max-width (window-body-width nil t)))
+            (insert "\n"))
+        (error
+         (shr-tag-pre dom)
+         (insert (format "\n[Mermaid: %s]\n" (error-message-string err)))))
+    (shr-tag-pre dom)))
+
+(defun my/markdown-fit-images (window)
+  "Fit preview SVGs to WINDOW after restoring its saved width."
+  (with-current-buffer (window-buffer window)
+    (when (buffer-live-p my/markdown-preview-source-buffer)
+      (with-silent-modifications
+        (let ((position (point-min))
+              (width (window-body-width window t)))
+          (while (< position (point-max))
+            (let ((next (next-single-property-change position 'display nil (point-max)))
+                  (image (get-text-property position 'display)))
+              (when (and (eq (car-safe image) 'image)
+                         (eq (image-property image :type) 'svg))
+                (setq image (copy-sequence image))
+                (setf (image-property image :max-width) width)
+                (put-text-property position next 'display image))
+              (setq position next))))))))
 
 (defun my/markdown-preview ()
   "Render the current Markdown buffer in an Emacs pane without exporting files."
@@ -160,7 +264,10 @@
                    (format "*Markdown preview: %s*" (buffer-name))))
          (window (display-buffer preview)))
     (with-selected-window window
-      (let ((inhibit-read-only t))
+      (let ((inhibit-read-only t)
+            (shr-external-rendering-functions
+             (cons '(pre . my/markdown-render-pre)
+                   shr-external-rendering-functions)))
         (erase-buffer)
         (shr-insert-document
          `(html nil
@@ -169,6 +276,7 @@
         (goto-char (point-min))
         (special-mode)
         (setq-local default-directory directory
+                    my/markdown-preview-source-buffer source
                     revert-buffer-function
                     (lambda (&rest _)
                       (with-current-buffer source
@@ -187,7 +295,8 @@
 (setq desktop-dirname (concat doom-cache-dir "desktop/")
       desktop-path (list desktop-dirname)
       desktop-base-file-name "emacs.desktop"
-      desktop-restore-eager 10
+      desktop-restore-frames nil
+      desktop-restore-eager t
       desktop-save t
       desktop-load-locked-desktop t
       desktop-auto-save-timeout 60)
@@ -202,37 +311,188 @@
 (windmove-default-keybindings '(control shift))
 
 (defvar my/layout-file (concat doom-cache-dir "layout.eld"))
+(defvar my/session-file (concat doom-cache-dir "workspaces.eld"))
 (defvar my/layout-restored nil)
+(defvar my/layout-in-progress nil)
+(defvar my/layout-save-timer nil)
+
+(defun my/main-frame-p (frame)
+  (and (frame-live-p frame)
+       (display-graphic-p frame)
+       (not (frame-parent frame))
+       (not (frame-parameter frame 'my-magit-diff))))
+
+(defun my/session-buffer-state (buffer)
+  "Describe how to reopen BUFFER without replaying commands."
+  (with-current-buffer buffer
+    (unless (file-remote-p default-directory)
+      (cons (buffer-name)
+            (cond
+             (buffer-file-name
+              (list :kind 'file :file buffer-file-name :point (point)))
+             ((derived-mode-p 'dashboard-mode) '(:kind dashboard))
+             ((derived-mode-p 'dired-mode)
+              (list :kind 'dired :directory default-directory))
+             ((derived-mode-p 'treemacs-mode)
+              (list :kind 'treemacs :directory default-directory))
+             ((derived-mode-p 'vterm-mode)
+              (list :kind 'vterm :directory default-directory))
+             ((derived-mode-p 'magit-status-mode)
+              (list :kind 'magit :directory default-directory))
+             ((buffer-live-p my/markdown-preview-source-buffer)
+              (list :kind 'markdown
+                    :source (buffer-name my/markdown-preview-source-buffer)))
+             (t '(:kind buffer)))))))
+
+(defun my/restore-session-buffer (entry)
+  "Reopen a saved buffer ENTRY, recreating supported tool panes."
+  (let* ((name (car entry))
+         (data (cdr entry))
+         (existing (get-buffer name))
+         (buffer
+          (pcase (plist-get data :kind)
+            ('file
+             (when (file-readable-p (plist-get data :file))
+               (let ((buffer (find-file-noselect (plist-get data :file))))
+                 (with-current-buffer buffer
+                   (goto-char (min (point-max) (or (plist-get data :point) 1))))
+                 buffer)))
+            ('dashboard (my/dashboard-buffer))
+            ('dired (dired-noselect (plist-get data :directory)))
+            ('treemacs
+             (require 'treemacs)
+             (let ((default-directory (plist-get data :directory)))
+               (treemacs))
+             (treemacs-get-local-buffer))
+            ('vterm
+             (if (and existing
+                      (with-current-buffer existing (derived-mode-p 'vterm-mode))
+                      (process-live-p (get-buffer-process existing)))
+                 existing
+               (require 'vterm)
+               (with-current-buffer (get-buffer-create name)
+                 (setq default-directory (plist-get data :directory))
+                 (vterm-mode)
+                 (current-buffer))))
+            ('magit
+             (magit-status (plist-get data :directory))
+             (current-buffer))
+            ('markdown
+             (when-let ((source (get-buffer (plist-get data :source))))
+               (with-current-buffer source (my/markdown-preview))
+               (get-buffer (format "*Markdown preview: %s*" (buffer-name source)))))
+            (_ (or existing (get-buffer-create name))))))
+    (when (and buffer (not (get-buffer name)))
+      (with-current-buffer buffer (rename-buffer name)))
+    buffer))
 
 (defun my/save-layout (&optional frame)
-  (when-let ((f (seq-find (lambda (candidate)
-                            (and (display-graphic-p candidate)
-                                 (not (frame-parent candidate))
-                                 (not (frame-parameter candidate 'my-magit-diff))))
-                          (if frame (list frame) (frame-list)))))
-    (with-temp-file my/layout-file
-      (prin1 (window-state-get (frame-root-window f) t) (current-buffer)))))
+  "Save the main editor before workspace or frame teardown."
+  (when-let ((frame (and my/layout-restored (not my/layout-in-progress)
+                        (if frame
+                            (and (my/main-frame-p frame) frame)
+                          (if (my/main-frame-p (selected-frame))
+                              (selected-frame)
+                            (seq-find #'my/main-frame-p (frame-list)))))))
+    (let ((my/layout-in-progress t))
+      (with-selected-frame frame
+        (dolist (other (frame-list))
+          (unless (my/main-frame-p other)
+            (set-frame-parameter other 'persp-ignore-wconf t)))
+        (let* ((buffers
+                (delete-dups
+                 (append (seq-filter (lambda (buffer)
+                                       (buffer-local-value 'buffer-file-name buffer))
+                                     (buffer-list))
+                         (mapcar #'window-buffer (window-list frame)))))
+               (state (list :window-state (window-state-get (frame-root-window frame) t)
+                            :workspace (+workspace-current-name)
+                            :buffers (delq nil (mapcar #'my/session-buffer-state buffers))))
+               (temporary (make-temp-file (concat my/layout-file "."))))
+          (unwind-protect
+              (progn
+                (desktop-save desktop-dirname)
+                (doom-save-session my/session-file)
+                (with-temp-file temporary (prin1 state (current-buffer)))
+                (rename-file temporary my/layout-file t))
+            (when (file-exists-p temporary)
+              (delete-file temporary))))))))
 
 (defun my/restore-layout (&optional frame)
-  (let ((f (or frame (selected-frame))))
-    (when (and (not my/layout-restored)
-               (display-graphic-p f)
-               (file-exists-p my/layout-file))
-      (setq my/layout-restored t)
-      (condition-case err
-          (with-selected-frame f
-            (window-state-put
-             (with-temp-buffer
-               (insert-file-contents my/layout-file)
-               (read (current-buffer)))
-             (frame-root-window f) 'safe))
-        (error (message "Layout restore failed: %s" err))))))
+  "Restore buffers and splits after the first graphical frame has settled."
+  (let ((frame (or frame (selected-frame))))
+    (when (and (not my/layout-restored) (my/main-frame-p frame))
+      (let ((my/layout-in-progress t))
+        (condition-case err
+            (with-selected-frame frame
+              (when (file-exists-p my/layout-file)
+                (let* ((state (with-temp-buffer
+                                (insert-file-contents my/layout-file)
+                                (read (current-buffer))))
+                       (window-state (or (plist-get state :window-state) state))
+                       (requested-buffer (window-buffer (selected-window)))
+                       (requested-point (window-point (selected-window))))
+                  (when (file-readable-p my/session-file)
+                    (condition-case err
+                        (doom-load-session my/session-file)
+                      (error (message "Workspace restore failed: %s" err))))
+                  (when-let ((workspace (plist-get state :workspace)))
+                    (+workspace-switch workspace t))
+                  (save-window-excursion
+                    (dolist (entry (plist-get state :buffers))
+                      (condition-case err
+                          (my/restore-session-buffer entry)
+                        (error (message "Buffer restore failed: %s" err)))))
+                  ;; Emacs 31 mixes pixel and cell units in nested splits.
+                  (window-state-put
+                   (seq-remove (lambda (entry)
+                                 (memq (car-safe entry) '(pixel-width pixel-height)))
+                               window-state)
+                   (frame-root-window frame) 'safe)
+                  (when (buffer-file-name requested-buffer)
+                    (switch-to-buffer requested-buffer)
+                    (goto-char (min requested-point (point-max))))
+                  (dolist (window (window-list frame))
+                    (my/markdown-fit-images window)
+                    (persp-add-buffer (window-buffer window)))))
+              (my/dashboard-buffer)
+              (set-frame-parameter frame 'my-layout-restored t)
+              (setq my/layout-restored t))
+          (error (message "Layout restore failed: %s" err)))))))
 
-(add-hook 'delete-frame-functions #'my/save-layout)
-(add-hook 'kill-emacs-hook #'my/save-layout)
-(run-with-timer 60 60 #'my/save-layout)
-(add-hook 'server-after-make-frame-hook #'my/restore-layout 90)
-(add-hook 'window-setup-hook #'my/restore-layout 90)
+(defun my/restore-layout-after-frame (&optional frame)
+  (let ((frame (or frame (selected-frame))))
+    (when (my/main-frame-p frame)
+      (run-with-timer 0.2 nil #'my/restore-layout frame))))
+
+(defun my/reset-layout-on-frame-close (frame)
+  (when (and (my/main-frame-p frame)
+             (not (seq-find (lambda (other)
+                              (and (not (eq other frame)) (my/main-frame-p other)))
+                            (frame-list))))
+    (setq my/layout-restored nil)
+    (when (timerp my/layout-save-timer)
+      (cancel-timer my/layout-save-timer))
+    (setq my/layout-save-timer nil)))
+
+(defun my/schedule-layout-save (frame)
+  (when (and my/layout-restored (not my/layout-in-progress)
+             (my/main-frame-p frame))
+    (when (timerp my/layout-save-timer)
+      (cancel-timer my/layout-save-timer))
+    (setq my/layout-save-timer
+          (run-with-idle-timer 1 nil #'my/save-layout frame))))
+
+(after! persp-mode
+  (setq persp-auto-save-opt 0))
+(remove-hook 'server-after-make-frame-hook #'my/restore-layout)
+(remove-hook 'window-setup-hook #'my/restore-layout)
+(add-hook 'delete-frame-functions #'my/save-layout -90)
+(add-hook 'delete-frame-functions #'my/reset-layout-on-frame-close -80)
+(add-hook 'kill-emacs-hook #'my/save-layout -90)
+(add-hook 'window-state-change-functions #'my/schedule-layout-save)
+(add-hook 'server-after-make-frame-hook #'my/restore-layout-after-frame 90)
+(add-hook 'window-setup-hook #'my/restore-layout-after-frame 90)
 
 (after! agent-shell
   (setq agent-shell-session-strategy 'new)
@@ -267,9 +527,9 @@
   (setq doom-modeline-height 24
         doom-modeline-bar-width 2))
 
-(menu-bar-mode -1)
+(menu-bar-mode 1)
 (tool-bar-mode -1)
-(add-to-list 'default-frame-alist '(menu-bar-lines . 0))
+(add-to-list 'default-frame-alist '(menu-bar-lines . 1))
 (context-menu-mode 1)
 
 ;; Name term buffers after their foreground process
