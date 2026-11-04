@@ -110,8 +110,8 @@ A saved layout takes priority at startup so the dashboard does not replace an
 open file or remove a split.
 
 The last main editor layout, selected workspace, and local file buffers are
-saved after one second of idle time following a window change, and before
-closing the editor frame or quitting Emacs. On restart, buffers are loaded
+saved before closing the editor frame or quitting Emacs normally. Background
+layout and desktop autosaves are disabled. On restart, buffers are loaded
 before the saved splits are restored; Treemacs, Magit status, Markdown previews,
 and vterm panes are recreated. Reopening a client after closing the last editor
 frame also restores the layout. Child popups and native Git diff windows are not
@@ -121,8 +121,9 @@ restored panes. Explicitly opening a file with an `emacsclient +LINE:COLUMN`
 argument retains that requested position.
 
 This state stays local under Doom's cache directory (`layout.eld`,
-`workspaces.eld`, and `desktop/`); it is not part of a Git clone. A forced kill
-can recover only the last completed autosave. Terminal panes start new shells:
+`workspaces.eld`, and `desktop/`); it is not part of a Git clone. A crash or
+`kill -9` can recover only the snapshot from the last normal exit/frame close.
+Terminal panes start new shells:
 running jobs and other process sessions cannot resume after Emacs exits. Remote
 buffers are not automatically reopened. Save file edits normally; layout
 snapshots do not store unsaved buffer text.

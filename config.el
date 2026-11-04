@@ -299,11 +299,12 @@
       desktop-restore-eager t
       desktop-save t
       desktop-load-locked-desktop t
-      desktop-auto-save-timeout 60)
+      desktop-auto-save-timeout nil)
 (after! desktop
   (add-to-list (quote desktop-minor-mode-table) (quote (centaur-tabs-local-mode nil))))
 (make-directory desktop-dirname t)
 (desktop-save-mode 1)
+(desktop-auto-save-disable)
 (add-hook 'kill-emacs-hook #'desktop-save-in-desktop-dir)
 (add-hook 'emacs-startup-hook #'desktop-read 90)
 
@@ -314,7 +315,6 @@
 (defvar my/session-file (concat doom-cache-dir "workspaces.eld"))
 (defvar my/layout-restored nil)
 (defvar my/layout-in-progress nil)
-(defvar my/layout-save-timer nil)
 
 (defun my/main-frame-p (frame)
   (and (frame-live-p frame)
@@ -470,18 +470,7 @@
              (not (seq-find (lambda (other)
                               (and (not (eq other frame)) (my/main-frame-p other)))
                             (frame-list))))
-    (setq my/layout-restored nil)
-    (when (timerp my/layout-save-timer)
-      (cancel-timer my/layout-save-timer))
-    (setq my/layout-save-timer nil)))
-
-(defun my/schedule-layout-save (frame)
-  (when (and my/layout-restored (not my/layout-in-progress)
-             (my/main-frame-p frame))
-    (when (timerp my/layout-save-timer)
-      (cancel-timer my/layout-save-timer))
-    (setq my/layout-save-timer
-          (run-with-idle-timer 1 nil #'my/save-layout frame))))
+    (setq my/layout-restored nil)))
 
 (after! persp-mode
   (setq persp-auto-save-opt 0))
@@ -490,7 +479,7 @@
 (add-hook 'delete-frame-functions #'my/save-layout -90)
 (add-hook 'delete-frame-functions #'my/reset-layout-on-frame-close -80)
 (add-hook 'kill-emacs-hook #'my/save-layout -90)
-(add-hook 'window-state-change-functions #'my/schedule-layout-save)
+(remove-hook 'window-state-change-functions #'my/schedule-layout-save)
 (add-hook 'server-after-make-frame-hook #'my/restore-layout-after-frame 90)
 (add-hook 'window-setup-hook #'my/restore-layout-after-frame 90)
 
