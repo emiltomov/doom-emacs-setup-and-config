@@ -77,14 +77,15 @@ editor; `C-c C-c` there finishes the commit, and `C-c C-k` cancels.
 
 Drafts are separate for each repository/worktree and stored in its Git metadata
 as `DOOM_COMMIT_DRAFT` (never staged). `C-x C-s` saves an unfinished draft for
-later sessions. Successful commits clear the draft; cancellation or failure
-keeps it. Existing amend, merge, rebase and template messages are not overwritten.
+later sessions; closing the status sidebar also saves it. Successful commits
+clear the draft; cancellation or failure keeps it. Existing amend, merge, rebase
+and template messages are not overwritten.
 `M-x my/magit-commit-message` opens the pane directly.
 
 `q` closes the diff window and returns to its originating window, or closes the
-status sidebar when used there. Standard Magit staging and commit commands remain
-available. Separate native diff windows require a graphical session; terminal
-sessions use ordinary Emacs windows.
+status sidebar and its draft pane when used there. Standard Magit staging and
+commit commands remain available. Separate native diff windows require a
+graphical session; terminal sessions use ordinary Emacs windows.
 
 Restart Emacs after applying these settings; no `doom sync` is needed for changes
 to `config.el`, `magit-frame.el`, or the local theme.

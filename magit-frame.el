@@ -32,7 +32,8 @@
       (with-current-buffer buffer
         (unless (derived-mode-p 'my/magit-commit-draft-mode)
           (my/magit-commit-draft-mode))
-        (setq default-directory root)
+        (setq-local default-directory root
+                    display-line-numbers nil)
         (when (bound-and-true-p persp-mode)
           (persp-add-buffer buffer)))
       buffer)))
@@ -185,7 +186,7 @@
   (set-popup-rule! "DOOM_COMMIT_DRAFT"
     :actions '(display-buffer-in-side-window)
     :side 'left :slot 1 :size 0.33
-    :select nil :quit nil :ttl nil :modeline t)
+    :select nil :quit nil :ttl nil :modeline t :autosave t)
   (set-popup-rule! "\\(?:COMMIT_EDITMSG\\|MERGE_MSG\\|TAG_EDITMSG\\|NOTES_EDITMSG\\)"
     :actions '(display-buffer-in-side-window)
     :side 'left :slot 1 :size 0.33
