@@ -1,0 +1,16 @@
+#!/bin/sh
+# Mermaid CLI requires Node >= 22.13, including when Emacs inherits old nvm defaults.
+node_supported() {
+  "$1" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' >/dev/null 2>&1
+}
+if ! node_supported node; then
+  for d in $(ls -d "$HOME"/.nvm/versions/node/v* 2>/dev/null | sort -V -r); do
+    if node_supported "$d/bin/node"; then PATH="$d/bin:$PATH"; break; fi
+  done
+fi
+export PATH
+if ! node_supported node; then
+  printf '%s\n' 'Mermaid CLI needs Node 22.13+ on PATH or installed through nvm.' >&2
+  exit 1
+fi
+exec "$HOME/.local/share/mermaid/node_modules/.bin/mmdc" "$@"

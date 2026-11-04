@@ -59,6 +59,13 @@ if [ ! -d "$SHARE/jdtls" ]; then
 fi
 ln -sf "$SHARE/jdtls/bin/jdtls" "$BIN/jdtls"
 
+step "Mermaid diagrams (uses an installed Chrome or Chromium)"
+if [ ! -x "$SHARE/mermaid/node_modules/.bin/mmdc" ]; then
+  mkdir -p "$SHARE/mermaid"
+  PUPPETEER_SKIP_DOWNLOAD=1 npm install --prefix "$SHARE/mermaid" @mermaid-js/mermaid-cli
+fi
+ln -sf "$CFG/bin/mmdc" "$BIN/mmdc"
+
 step "Doom sync"
 "$HOME/.config/emacs/bin/doom" sync
 
